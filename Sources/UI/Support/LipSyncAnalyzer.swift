@@ -125,8 +125,24 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     }
 
     // MARK: - LKRTCAudioRenderer
-    /// Conformance to `LKRTCAudioRenderer`. The protocol requires the label `pcmBuffer`.
+    /// Objective-C entry point used by `LKRTCAudioTrack` (`render:` selector).
+    /// This ensures the WebRTC stack can call into our renderer even if the Swift
+    /// protocol name mapping differs.
+    @objc(render:)
+    public func renderObjC(_ pcmBuffer: AVAudioPCMBuffer) {
+        handleRender(pcmBuffer)
+    }
+
+    /// Swift conformance to `LKRTCAudioRenderer` (`render(pcmBuffer:)`).
+    /// Simply forwards to the ObjC entry point.
     public func render(pcmBuffer: AVAudioPCMBuffer) {
+        handleRender(pcmBuffer)
+    }
+
+    private func handleRender(_ pcmBuffer: AVAudioPCMBuffer) {
+        if logMorphs {
+            print("[LipSync] render() called, frameLength=\(pcmBuffer.frameLength)")
+        }
         print("[LipSync] render() called, frameLength=\(pcmBuffer.frameLength)")
 
         guard let channel = pcmBuffer.floatChannelData?[0] else {
