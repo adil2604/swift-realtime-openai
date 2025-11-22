@@ -50,6 +50,20 @@ public final class Conversation: @unchecked Sendable {
 
 	/// Whether the model is currently speaking.
 	public private(set) var isModelSpeaking: Bool = false
+	
+	/// Callback invoked when a text delta arrives for an assistant message item.
+	/// Parameters: itemId, contentIndex, delta
+	public var onResponseTextDelta: ((String, Int, String) -> Void)?
+	
+	/// Callback invoked when the final text is available for an assistant message item.
+	/// Parameters: itemId, contentIndex, text
+	public var onResponseTextDone: ((String, Int, String) -> Void)?
+	
+	/// Callback invoked when model output audio buffer starts (model begins "speaking").
+	public var onModelSpeechStarted: (() -> Void)?
+	
+	/// Callback invoked when model output audio buffer stops (model finished "speaking").
+	public var onModelSpeechStopped: (() -> Void)?
 
 	/// A list of messages in the conversation.
 	/// Note that this doesn't include function call events. To get a complete list, use `entries`.
@@ -207,10 +221,12 @@ private extension Conversation {
 
 					message.content[contentIndex] = .text(text + delta)
 				}
+				onResponseTextDelta?(itemId, contentIndex, delta)
 			case let .responseTextDone(_, _, itemId, _, contentIndex, text):
 				updateEvent(id: itemId) { message in
 					message.content[contentIndex] = .text(text)
 				}
+				onResponseTextDone?(itemId, contentIndex, text)
 			case let .responseAudioTranscriptDelta(_, _, itemId, _, contentIndex, delta):
 				updateEvent(id: itemId) { message in
 					guard case let .audio(audio) = message.content[contentIndex] else { return }
@@ -242,8 +258,10 @@ private extension Conversation {
 				isUserSpeaking = false
 			case .outputAudioBufferStarted:
 				isModelSpeaking = true
+				onModelSpeechStarted?()
 			case .outputAudioBufferStopped:
 				isModelSpeaking = false
+				onModelSpeechStopped?()
 			case let .responseOutputItemDone(_, _, _, item):
 				updateEvent(id: item.id) { message in
 					guard case let .message(newMessage) = item else { return }
