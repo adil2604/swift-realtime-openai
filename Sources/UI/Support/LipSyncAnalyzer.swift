@@ -9,7 +9,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     // MARK: - Public callback
     public var onMorphsUpdated: (([String: Float]) -> Void)?
     /// Set to `true` to print morph weights each frame (for debugging only).
-    public var logMorphs: Bool = false
+    public var logMorphs: Bool = true
     private var didLogFormatInfo = false
     private var lastFrameLengthWarning: UInt32?
     private var debugFramePrints = 0

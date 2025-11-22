@@ -73,9 +73,25 @@ import FoundationNetworking
 		dataChannel.delegate = self
 	}
 
+    private let deliveredRemoteTracksLock = NSLock()
+    private var deliveredRemoteTrackIds: Set<String> = []
+
     private func notifyRemoteAudioTrack(_ track: LKRTCAudioTrack, via source: String) {
         let trackId = track.trackId
-        print("🎧 Remote audio track (\(source)) id=\(trackId) enabled=\(track.isEnabled)")
+        var isFirstDelivery = false
+
+        deliveredRemoteTracksLock.lock()
+        if !deliveredRemoteTrackIds.contains(trackId) {
+            deliveredRemoteTrackIds.insert(trackId)
+            isFirstDelivery = true
+        }
+        deliveredRemoteTracksLock.unlock()
+
+        let note = isFirstDelivery ? "delivering" : "already delivered, skipping callback"
+        print("🎧 Remote audio track (\(source)) id=\(trackId) enabled=\(track.isEnabled) -> \(note)")
+
+        guard isFirstDelivery else { return }
+
         Task { @MainActor in
             self.onRemoteAudioTrack?(track)
         }
