@@ -38,18 +38,8 @@ import FoundationNetworking
     // Given the error is about Observation macro generation for stored property,
     // let's skip Observation for this property since it's a closure and likely doesn't need to update UI directly via Observation.
     @ObservationIgnored
-    public var onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)? {
-        get {
-            _onRemoteAudioTrackLock.withLock { _onRemoteAudioTrack }
-        }
-        set {
-            _onRemoteAudioTrackLock.withLock { _onRemoteAudioTrack = newValue }
-        }
-    }
-    @ObservationIgnored
-    private var _onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)?
-    @ObservationIgnored
-    private let _onRemoteAudioTrackLock = NSLock()
+    @MainActor
+    public var onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)?
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
 
@@ -202,7 +192,9 @@ extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 	public func peerConnectionShouldNegotiate(_: LKRTCPeerConnection) {}
 	public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
         if let track = stream.audioTracks.first {
-            onRemoteAudioTrack?(track)
+            Task { @MainActor in
+                self.onRemoteAudioTrack?(track)
+            }
         }
     }
 	public func peerConnection(_: LKRTCPeerConnection, didOpen _: LKRTCDataChannel) {}
