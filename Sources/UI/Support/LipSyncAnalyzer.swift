@@ -33,7 +33,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     private let emaFactor: Float = 0.35
 
-    override init() {
+    public override init() {
         super.init()
         setupFFT()
     }
