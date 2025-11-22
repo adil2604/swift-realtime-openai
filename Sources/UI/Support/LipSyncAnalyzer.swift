@@ -106,7 +106,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     // MARK: - Public API
     public var onMorphsUpdated: (([String: Float]) -> Void)?
-    public var logMorphs: Bool = false
+    public var logMorphs: Bool = true
     public var configuration: Configuration
 
     // MARK: - State
