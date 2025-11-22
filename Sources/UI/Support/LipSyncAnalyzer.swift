@@ -126,6 +126,8 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     // MARK: - LKRTCAudioRenderer
     public func render(pcmBuffer: AVAudioPCMBuffer) {
+        print("[LipSync] render() called, frameLength=\(pcmBuffer.frameLength)")
+
         guard let channel = pcmBuffer.floatChannelData?[0] else {
             if logMorphs {
                 print("[LipSync] Missing channel data (frameLength=\(pcmBuffer.frameLength))")
