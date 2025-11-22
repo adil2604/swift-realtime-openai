@@ -15,7 +15,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     // MARK: - FFT setup
     // Dynamically updated based on buffer
     private var sampleRate: Float = 48_000
-    private let frameLength: Int = 480
+    private var frameLength: Int = 480
 
     private var fftSetup: vDSP.FFT<DSPSplitComplex>?
     private var window: [Float] = []
@@ -36,7 +36,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     public override init() {
         super.init()
-        setupFFT()
+        setupFFT(frameLength: frameLength)
     }
 
     // MARK: - FFT init
