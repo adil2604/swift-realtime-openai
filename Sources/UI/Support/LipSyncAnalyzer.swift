@@ -6,7 +6,7 @@ import LiveKitWebRTC
 public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     // MARK: - Public callback
-    var onMorphsUpdated: (([String: Float]) -> Void)?
+    public var onMorphsUpdated: (([String: Float]) -> Void)?
 
     // MARK: - FFT setup
     // Dynamically updated based on buffer
