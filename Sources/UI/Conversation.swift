@@ -221,6 +221,9 @@ private extension Conversation {
 
 					message.content[contentIndex] = .text(text + delta)
 				}
+				if debug {
+					print("response.text.delta itemId=\(itemId) contentIndex=\(contentIndex) delta=\"\(delta)\"")
+				}
 				onResponseTextDelta?(itemId, contentIndex, delta)
 			case let .responseTextDone(_, _, itemId, _, contentIndex, text):
 				updateEvent(id: itemId) { message in
