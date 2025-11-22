@@ -64,6 +64,14 @@ public final class Conversation: @unchecked Sendable {
 	
 	/// Callback invoked when model output audio buffer stops (model finished "speaking").
 	public var onModelSpeechStopped: (() -> Void)?
+	
+	/// Callback invoked when the model-generated transcription of audio output is updated.
+	/// Parameters: itemId, contentIndex, transcript delta
+	public var onResponseAudioTranscriptDelta: ((String, Int, String) -> Void)?
+	
+	/// Callback invoked when the model-generated transcription of audio output is done.
+	/// Parameters: itemId, contentIndex, final transcript
+	public var onResponseAudioTranscriptDone: ((String, Int, String) -> Void)?
 
 	/// A list of messages in the conversation.
 	/// Note that this doesn't include function call events. To get a complete list, use `entries`.
@@ -239,12 +247,14 @@ private extension Conversation {
 				if debug {
 					print("response.output_audio_transcript.delta itemId=\(itemId) contentIndex=\(contentIndex) delta=\"\(delta)\"")
 				}
+				onResponseAudioTranscriptDelta?(itemId, contentIndex, delta)
 			case let .responseAudioTranscriptDone(_, _, itemId, _, contentIndex, transcript):
 				updateEvent(id: itemId) { message in
 					guard case let .audio(audio) = message.content[contentIndex] else { return }
 
 					message.content[contentIndex] = .audio(.init(audio: audio.audio, transcript: transcript))
 				}
+				onResponseAudioTranscriptDone?(itemId, contentIndex, transcript)
 			case let .responseOutputAudioDelta(_, _, itemId, _, contentIndex, delta):
 				updateEvent(id: itemId) { message in
 					guard case let .audio(audio) = message.content[contentIndex] else { return }
