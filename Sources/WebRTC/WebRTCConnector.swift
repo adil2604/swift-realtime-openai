@@ -73,6 +73,14 @@ import FoundationNetworking
 		dataChannel.delegate = self
 	}
 
+    private func notifyRemoteAudioTrack(_ track: LKRTCAudioTrack, via source: String) {
+        let trackId = track.trackId
+        print("🎧 Remote audio track (\(source)) id=\(trackId) enabled=\(track.isEnabled)")
+        Task { @MainActor in
+            self.onRemoteAudioTrack?(track)
+        }
+    }
+
 	deinit {
 		disconnect()
 	}
@@ -190,19 +198,15 @@ private extension WebRTCConnector {
 
 extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 	public func peerConnectionShouldNegotiate(_: LKRTCPeerConnection) {}
-    public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
+	public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
         if let track = stream.audioTracks.first {
-            Task { @MainActor in
-                self.onRemoteAudioTrack?(track)
-            }
+            notifyRemoteAudioTrack(track, via: "mediaStream")
         }
     }
     
-    public func peerConnection(_ peerConnection: LKRTCPeerConnection, didAdd rtpReceiver: LKRTCRtpReceiver, streams: [LKRTCMediaStream]) {
+    public func peerConnection(_: LKRTCPeerConnection, didAdd rtpReceiver: LKRTCRtpReceiver, streams: [LKRTCMediaStream]) {
         if let audioTrack = rtpReceiver.track as? LKRTCAudioTrack ?? streams.first?.audioTracks.first {
-            Task { @MainActor in
-                self.onRemoteAudioTrack?(audioTrack)
-            }
+            notifyRemoteAudioTrack(audioTrack, via: "rtpReceiver")
         }
     }
 	public func peerConnection(_: LKRTCPeerConnection, didOpen _: LKRTCDataChannel) {}
