@@ -125,10 +125,8 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     }
 
     // MARK: - LKRTCAudioRenderer
-    /// Note: The first parameter label must be `_` to match the Objective-C selector `render:`.
-    /// Using `render(pcmBuffer:)` would expose `renderWithPcmBuffer:` and the WebRTC stack
-    /// would never call into this renderer.
-    public func render(_ pcmBuffer: AVAudioPCMBuffer) {
+    /// Conformance to `LKRTCAudioRenderer`. The protocol requires the label `pcmBuffer`.
+    public func render(pcmBuffer: AVAudioPCMBuffer) {
         print("[LipSync] render() called, frameLength=\(pcmBuffer.frameLength)")
 
         guard let channel = pcmBuffer.floatChannelData?[0] else {
