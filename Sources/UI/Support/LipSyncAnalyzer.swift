@@ -3,7 +3,7 @@ import AVFoundation
 import Accelerate
 import LiveKitWebRTC
 
-final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
+public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     // MARK: - Public callback
     var onMorphsUpdated: (([String: Float]) -> Void)?
