@@ -7,6 +7,9 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     // MARK: - Public callback
     public var onMorphsUpdated: (([String: Float]) -> Void)?
+    
+    /// Set to `true` to print morph weights each frame (for debugging only).
+    public var logMorphs: Bool = false
 
     // MARK: - FFT setup
     // Dynamically updated based on buffer
@@ -152,6 +155,16 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
             rolloff: smoothedRolloff,
             zcr: smoothedZCR
         )
+        
+        if logMorphs {
+            let topMorphs = morphs
+                .filter { $0.value > 0.05 }
+                .sorted { $0.value > $1.value }
+                .prefix(5)
+                .map { "\($0.key)=\(String(format: "%.2f", $0.value))" }
+                .joined(separator: ", ")
+            print("[LipSync] morphs: \(topMorphs)")
+        }
 
         onMorphsUpdated?(morphs)
     }
