@@ -157,13 +157,16 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
         )
         
         if logMorphs {
-            let topMorphs = morphs
-                .filter { $0.value > 0.05 }
-                .sorted { $0.value > $1.value }
-                .prefix(5)
-                .map { "\($0.key)=\(String(format: "%.2f", $0.value))" }
-                .joined(separator: ", ")
-            print("[LipSync] morphs: \(topMorphs)")
+            let maxWeight = morphs.values.max() ?? 0
+            if maxWeight > 0.02 || smoothedVolume > 0.002 {
+                let topMorphs = morphs
+                    .sorted { $0.value > $1.value }
+                    .prefix(5)
+                    .map { "\($0.key)=\(String(format: "%.2f", $0.value))" }
+                    .joined(separator: ", ")
+                let rmsdB = 20 * log10(max(smoothedVolume, 0.0001))
+                print("[LipSync] RMS=\(String(format: "%.1f", rmsdB))dB | \(topMorphs)")
+            }
         }
 
         onMorphsUpdated?(morphs)

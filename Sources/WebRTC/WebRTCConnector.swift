@@ -190,10 +190,18 @@ private extension WebRTCConnector {
 
 extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 	public func peerConnectionShouldNegotiate(_: LKRTCPeerConnection) {}
-	public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
+    public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
         if let track = stream.audioTracks.first {
             Task { @MainActor in
                 self.onRemoteAudioTrack?(track)
+            }
+        }
+    }
+    
+    public func peerConnection(_ peerConnection: LKRTCPeerConnection, didAdd rtpReceiver: LKRTCRtpReceiver, streams: [LKRTCMediaStream]) {
+        if let audioTrack = rtpReceiver.track as? LKRTCAudioTrack ?? streams.first?.audioTracks.first {
+            Task { @MainActor in
+                self.onRemoteAudioTrack?(audioTrack)
             }
         }
     }
