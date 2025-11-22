@@ -38,7 +38,16 @@ import FoundationNetworking
     // Given the error is about Observation macro generation for stored property,
     // let's skip Observation for this property since it's a closure and likely doesn't need to update UI directly via Observation.
     @ObservationIgnored
-    public var onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)?
+    public var onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)? {
+        get {
+            _onRemoteAudioTrackLock.withLock { _onRemoteAudioTrack }
+        }
+        set {
+            _onRemoteAudioTrackLock.withLock { _onRemoteAudioTrack = newValue }
+        }
+    }
+    private var _onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)?
+    private let _onRemoteAudioTrackLock = NSLock()
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
 
