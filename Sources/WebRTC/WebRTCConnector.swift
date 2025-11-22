@@ -29,6 +29,15 @@ import FoundationNetworking
 	private let dataChannel: LKRTCDataChannel
 	private let connection: LKRTCPeerConnection
     
+    // @Observable already implies checking thread safety, but for Sendable conformance in strict mode with mutable state:
+    // We can use a lock or just mark it unchecked Sendable if we are sure about thread safety, 
+    // but here we simply mark the closure as @MainActor or handle it carefully.
+    // Since this is called from a delegate (WebRTC thread), we should be careful.
+    // For simplicity in this context, we can make it thread-safe or isolate to MainActor if possible,
+    // OR just acknowledge it's mutable state in a Sendable class.
+    // Given the error is about Observation macro generation for stored property,
+    // let's skip Observation for this property since it's a closure and likely doesn't need to update UI directly via Observation.
+    @ObservationIgnored
     public var onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)?
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
