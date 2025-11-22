@@ -236,6 +236,9 @@ private extension Conversation {
 
 					message.content[contentIndex] = .audio(.init(audio: audio.audio, transcript: (audio.transcript ?? "") + delta))
 				}
+				if debug {
+					print("response.output_audio_transcript.delta itemId=\(itemId) contentIndex=\(contentIndex) delta=\"\(delta)\"")
+				}
 			case let .responseAudioTranscriptDone(_, _, itemId, _, contentIndex, transcript):
 				updateEvent(id: itemId) { message in
 					guard case let .audio(audio) = message.content[contentIndex] else { return }
