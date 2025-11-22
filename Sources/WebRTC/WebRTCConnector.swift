@@ -28,6 +28,8 @@ import FoundationNetworking
 	package let audioTrack: LKRTCAudioTrack
 	private let dataChannel: LKRTCDataChannel
 	private let connection: LKRTCPeerConnection
+    
+    public var onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)?
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
 
@@ -178,7 +180,11 @@ private extension WebRTCConnector {
 
 extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 	public func peerConnectionShouldNegotiate(_: LKRTCPeerConnection) {}
-	public func peerConnection(_: LKRTCPeerConnection, didAdd _: LKRTCMediaStream) {}
+	public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
+        if let track = stream.audioTracks.first {
+            onRemoteAudioTrack?(track)
+        }
+    }
 	public func peerConnection(_: LKRTCPeerConnection, didOpen _: LKRTCDataChannel) {}
 	public func peerConnection(_: LKRTCPeerConnection, didRemove _: LKRTCMediaStream) {}
 	public func peerConnection(_: LKRTCPeerConnection, didChange _: LKRTCSignalingState) {}

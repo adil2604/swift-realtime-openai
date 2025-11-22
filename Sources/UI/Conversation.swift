@@ -50,6 +50,13 @@ public final class Conversation: @unchecked Sendable {
 
 	/// Whether the model is currently speaking.
 	public private(set) var isModelSpeaking: Bool = false
+    
+    /// Callback invoked when the remote audio track is available.
+    /// You can use this to attach an audio renderer, like `LipSyncAnalyzer`.
+    public var onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)? {
+        get { client.onRemoteAudioTrack }
+        set { client.onRemoteAudioTrack = newValue }
+    }
 	
 	/// Callback invoked when a text delta arrives for an assistant message item.
 	/// Parameters: itemId, contentIndex, delta
