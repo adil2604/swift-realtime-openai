@@ -73,7 +73,9 @@ import FoundationNetworking
 		dataChannel.delegate = self
 	}
 
+    @ObservationIgnored
     private let deliveredRemoteTracksLock = NSLock()
+    @ObservationIgnored
     private var deliveredRemoteTrackIds: Set<String> = []
 
     private func notifyRemoteAudioTrack(_ track: LKRTCAudioTrack, via source: String) {
