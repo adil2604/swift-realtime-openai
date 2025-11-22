@@ -7,9 +7,10 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     // MARK: - Public callback
     public var onMorphsUpdated: (([String: Float]) -> Void)?
-    
     /// Set to `true` to print morph weights each frame (for debugging only).
     public var logMorphs: Bool = false
+    private var didLogFormatInfo = false
+    private var lastFrameLengthWarning: UInt32?
 
     // MARK: - FFT setup
     // Dynamically updated based on buffer
@@ -74,10 +75,26 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
              freqAxis = (0..<halfLength).map { Float($0) * (sampleRate / Float(frameLength)) }
         }
 
-        guard
-            let channel = pcmBuffer.floatChannelData?[0],
-            pcmBuffer.frameLength == frameLength // Important: if 1024 comes in, FFT will crash without this check or resizing
-        else { return }
+        guard let channel = pcmBuffer.floatChannelData?[0] else {
+            if logMorphs {
+                print("[LipSync] Missing channel data (frameLength=\(pcmBuffer.frameLength))")
+            }
+            return
+        }
+
+        let currentFrameLength = Int(pcmBuffer.frameLength)
+        if currentFrameLength != frameLength {
+            if logMorphs, lastFrameLengthWarning != pcmBuffer.frameLength {
+                lastFrameLengthWarning = pcmBuffer.frameLength
+                print("[LipSync] Skipping frame: expected \(frameLength) samples, got \(currentFrameLength).")
+            }
+            return
+        }
+
+        if logMorphs, !didLogFormatInfo {
+            didLogFormatInfo = true
+            print("[LipSync] Renderer attached. sampleRate=\(pcmBuffer.format.sampleRate), frameLength=\(pcmBuffer.frameLength)")
+        }
 
         let samples = UnsafeBufferPointer(start: channel, count: frameLength)
 
