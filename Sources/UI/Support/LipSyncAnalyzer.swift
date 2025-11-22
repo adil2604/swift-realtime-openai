@@ -109,8 +109,15 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
             }
         }
         
-        // Get magnitudes
-        vDSP.absolute(realBuffer, imagBuffer, result: &magnitudes)
+        // Get magnitudes |v|
+        realBuffer.withUnsafeMutableBufferPointer { realPtr in
+            imagBuffer.withUnsafeMutableBufferPointer { imagPtr in
+                magnitudes.withUnsafeMutableBufferPointer { magPtr in
+                    var split = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
+                    vDSP_zvabs(&split, 1, magPtr.baseAddress!, 1, vDSP_Length(magnitudes.count))
+                }
+            }
+        }
 
         // ---- 4. Spectral centroid ----
         // Use pre-allocated weightedBuffer
