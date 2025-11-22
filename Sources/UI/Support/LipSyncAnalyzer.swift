@@ -3,6 +3,7 @@ import AVFoundation
 import Accelerate
 import LiveKitWebRTC
 
+@objcMembers
 public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
     // MARK: - Public callback
@@ -11,6 +12,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     public var logMorphs: Bool = false
     private var didLogFormatInfo = false
     private var lastFrameLengthWarning: UInt32?
+    private var debugFramePrints = 0
 
     // MARK: - FFT setup
     // Dynamically updated based on buffer
@@ -104,6 +106,11 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
         }
 
         let samples = UnsafeBufferPointer(start: channel, count: frameLength)
+
+        if logMorphs && debugFramePrints < 5 {
+            debugFramePrints += 1
+            print("[LipSync] frame \(debugFramePrints): sampleRate=\(pcmBuffer.format.sampleRate) len=\(frameLength)")
+        }
 
         // ---- 1. RMS loudness ----
         var rms: Float = 0
