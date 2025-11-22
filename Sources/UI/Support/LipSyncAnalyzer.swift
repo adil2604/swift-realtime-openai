@@ -6,81 +6,126 @@ import LiveKitWebRTC
 @objcMembers
 public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
 
-    // MARK: - Public callback
+    public struct Configuration: Sendable {
+        public var volumeSmoothing: Float
+        public var featureSmoothing: Float
+        public var silenceVolumeThreshold: Float
+        public var noiseRolloffThreshold: Float
+        public var noiseZeroCrossingThreshold: Float
+        public var roundedCentroidUpperBound: Float
+        public var brightCentroidLowerBound: Float
+        public var rolloffPercentile: Float
+        public var maxDebugFrames: Int
+        public var logMorphWeightThreshold: Float
+        public var logVolumeThreshold: Float
+
+        public init(
+            volumeSmoothing: Float = 0.25,
+            featureSmoothing: Float = 0.35,
+            silenceVolumeThreshold: Float = 0.003,
+            noiseRolloffThreshold: Float = 5_000,
+            noiseZeroCrossingThreshold: Float = 0.12,
+            roundedCentroidUpperBound: Float = 800,
+            brightCentroidLowerBound: Float = 2_500,
+            rolloffPercentile: Float = 0.85,
+            maxDebugFrames: Int = 5,
+            logMorphWeightThreshold: Float = 0.02,
+            logVolumeThreshold: Float = 0.002
+        ) {
+            self.volumeSmoothing = volumeSmoothing
+            self.featureSmoothing = featureSmoothing
+            self.silenceVolumeThreshold = silenceVolumeThreshold
+            self.noiseRolloffThreshold = noiseRolloffThreshold
+            self.noiseZeroCrossingThreshold = noiseZeroCrossingThreshold
+            self.roundedCentroidUpperBound = roundedCentroidUpperBound
+            self.brightCentroidLowerBound = brightCentroidLowerBound
+            self.rolloffPercentile = rolloffPercentile
+            self.maxDebugFrames = maxDebugFrames
+            self.logMorphWeightThreshold = logMorphWeightThreshold
+            self.logVolumeThreshold = logVolumeThreshold
+        }
+    }
+
+    private struct AudioMetrics {
+        var volume: Float
+        var centroid: Float
+        var rolloff: Float
+        var zcr: Float
+    }
+
+    private final class FFTResources {
+        let frameLength: Int
+        let halfLength: Int
+        var sampleRate: Float {
+            didSet {
+                if oldValue != sampleRate {
+                    updateFrequencyAxis()
+                }
+            }
+        }
+
+        let fft: vDSP.FFT<DSPSplitComplex>
+        var window: [Float]
+        var realBuffer: [Float]
+        var imagBuffer: [Float]
+        var magnitudes: [Float]
+        var windowedBuffer: [Float]
+        var weightedBuffer: [Float]
+        var freqAxis: [Float]
+
+        init?(frameLength: Int, sampleRate: Float) {
+            guard frameLength > 0, frameLength.isMultiple(of: 2) else { return nil }
+            let log2n = vDSP_Length(log2(Float(frameLength)))
+            guard let fft = vDSP.FFT(log2n: log2n, radix: .radix2, ofType: DSPSplitComplex.self) else { return nil }
+
+            self.frameLength = frameLength
+            self.halfLength = frameLength / 2
+            self.sampleRate = sampleRate
+            self.fft = fft
+            self.window = vDSP.window(ofType: Float.self,
+                                      usingSequence: .hanningDenormalized,
+                                      count: frameLength,
+                                      isHalfWindow: false)
+            self.realBuffer = .init(repeating: 0, count: halfLength)
+            self.imagBuffer = .init(repeating: 0, count: halfLength)
+            self.magnitudes = .init(repeating: 0, count: halfLength)
+            self.windowedBuffer = .init(repeating: 0, count: frameLength)
+            self.weightedBuffer = .init(repeating: 0, count: halfLength)
+            self.freqAxis = []
+            updateFrequencyAxis()
+        }
+
+        private func updateFrequencyAxis() {
+            guard frameLength > 0 else {
+                freqAxis = []
+                return
+            }
+            freqAxis = (0..<halfLength).map { Float($0) * (sampleRate / Float(frameLength)) }
+        }
+    }
+
+    // MARK: - Public API
     public var onMorphsUpdated: (([String: Float]) -> Void)?
-    /// Set to `true` to print morph weights each frame (for debugging only).
-    public var logMorphs: Bool = true
-    private var didLogFormatInfo = false
-    private var lastFrameLengthWarning: UInt32?
-    private var debugFramePrints = 0
+    public var logMorphs: Bool = false
+    public var configuration: Configuration
 
-    // MARK: - FFT setup
-    // Dynamically updated based on buffer
-    private var sampleRate: Float = 48_000
-    private var frameLength: Int = 480
-
-    private var fftSetup: vDSP.FFT<DSPSplitComplex>?
-    private var window: [Float] = []
-    private var realBuffer: [Float] = []
-    private var imagBuffer: [Float] = []
-    private var magnitudes: [Float] = []
-    private var windowedBuffer: [Float] = []
-    private var weightedBuffer: [Float] = []
-    private var freqAxis: [Float] = []
-
-    // MARK: - EMA smoothing
+    // MARK: - State
+    private var fftResources: FFTResources?
     private var smoothedVolume: Float = 0
     private var smoothedCentroid: Float = 0
     private var smoothedRolloff: Float = 0
     private var smoothedZCR: Float = 0
+    private var didLogFormatInfo = false
+    private var lastFrameLengthWarning: UInt32?
+    private var debugFramePrints = 0
 
-    private let emaFactor: Float = 0.35
-
-    public override init() {
+    public init(configuration: Configuration = .init()) {
+        self.configuration = configuration
         super.init()
-        setupFFT(frameLength: frameLength)
     }
 
-    // MARK: - FFT init
-    private func setupFFT(frameLength: Int) {
-        guard frameLength > 0, frameLength.isMultiple(of: 2) else {
-            fftSetup = nil
-            return
-        }
-
-        let log2n = vDSP_Length(log2(Float(frameLength)))
-        fftSetup = vDSP.FFT(log2n: log2n, radix: .radix2, ofType: DSPSplitComplex.self)
-
-        window = vDSP.window(ofType: Float.self,
-                             usingSequence: .hanningDenormalized,
-                             count: frameLength,
-                             isHalfWindow: false)
-
-        let halfLength = frameLength / 2
-        realBuffer = .init(repeating: 0, count: halfLength)
-        imagBuffer = .init(repeating: 0, count: halfLength)
-        magnitudes = .init(repeating: 0, count: halfLength)
-        windowedBuffer = .init(repeating: 0, count: frameLength)
-        weightedBuffer = .init(repeating: 0, count: halfLength)
-        freqAxis = (0..<halfLength).map { Float($0) * (sampleRate / Float(frameLength)) }
-
-        self.frameLength = frameLength
-        if logMorphs {
-            print("[LipSync] FFT configured: frameLength=\(frameLength)")
-        }
-    }
-
-    // MARK: - Main render
+    // MARK: - LKRTCAudioRenderer
     public func render(pcmBuffer: AVAudioPCMBuffer) {
-        // Check for sample rate change (rare but possible)
-        let bufferSampleRate = Float(pcmBuffer.format.sampleRate)
-        if bufferSampleRate != self.sampleRate && bufferSampleRate > 0 {
-             self.sampleRate = bufferSampleRate
-             // Recalculate frequency axis
-             let halfLength = frameLength / 2
-             freqAxis = (0..<halfLength).map { Float($0) * (sampleRate / Float(frameLength)) }
-        }
-
         guard let channel = pcmBuffer.floatChannelData?[0] else {
             if logMorphs {
                 print("[LipSync] Missing channel data (frameLength=\(pcmBuffer.frameLength))")
@@ -88,174 +133,237 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
             return
         }
 
-        let currentFrameLength = Int(pcmBuffer.frameLength)
-        if currentFrameLength != frameLength || fftSetup == nil {
-            setupFFT(frameLength: currentFrameLength)
-        }
-        guard currentFrameLength == frameLength, let fftSetup else {
-            if logMorphs, lastFrameLengthWarning != pcmBuffer.frameLength {
-                lastFrameLengthWarning = pcmBuffer.frameLength
-                print("[LipSync] Skipping frame: FFT not configured for length \(currentFrameLength)")
-            }
+        let frameLength = Int(pcmBuffer.frameLength)
+        guard frameLength > 0 else { return }
+
+        let sampleRate = max(Float(pcmBuffer.format.sampleRate), 1)
+
+        guard let resources = ensureFFTResources(frameLength: frameLength, sampleRate: sampleRate) else {
+            warnFrameLengthIfNeeded(length: pcmBuffer.frameLength)
             return
         }
 
-        if logMorphs, !didLogFormatInfo {
-            didLogFormatInfo = true
-            print("[LipSync] Renderer attached. sampleRate=\(pcmBuffer.format.sampleRate), frameLength=\(pcmBuffer.frameLength)")
-        }
+        logFormatInfoIfNeeded(buffer: pcmBuffer)
+        logDebugFrame(sampleRate: sampleRate, frameLength: frameLength)
 
         let samples = UnsafeBufferPointer(start: channel, count: frameLength)
+        let metrics = analyze(samples: samples, resources: resources)
+        let smoothedMetrics = smooth(metrics: metrics)
+        let morphs = calculateMorphs(for: smoothedMetrics)
 
-        if logMorphs && debugFramePrints < 5 {
-            debugFramePrints += 1
-            print("[LipSync] frame \(debugFramePrints): sampleRate=\(pcmBuffer.format.sampleRate) len=\(frameLength)")
-        }
-
-        // ---- 1. RMS loudness ----
-        var rms: Float = 0
-        vDSP_rmsqv(samples.baseAddress!, 1, &rms, vDSP_Length(frameLength))
-
-        // smooth volume
-        smoothedVolume = rms * 0.25 + smoothedVolume * 0.75
-
-        // ---- 2. Zero Crossing Rate (ZCR) ----
-        var zcrCount: Float = 0
-        // Use unsafe pointer for speed (no bound checks)
-        for i in 1..<frameLength {
-            if samples[i] * samples[i-1] < 0 {
-                zcrCount += 1
-            }
-        }
-        let zcr = zcrCount / Float(frameLength)
-        smoothedZCR = zcr * emaFactor + smoothedZCR * (1 - emaFactor)
-
-        // ---- 3. FFT → Magnitudes ----
-        // Use pre-allocated windowedBuffer
-        vDSP.multiply(samples, window, result: &windowedBuffer)
-
-        windowedBuffer.withUnsafeBufferPointer { ptr in
-            ptr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: frameLength / 2) { complexPtr in
-                var split = DSPSplitComplex(realp: &realBuffer, imagp: &imagBuffer)
-                // Important: vDSP_ctoz expects stride 2 for input (Interleaved Complex)
-                vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(frameLength / 2))
-                fftSetup.forward(input: split, output: &split)
-            }
-        }
-        
-        // Get magnitudes |v|
-        realBuffer.withUnsafeMutableBufferPointer { realPtr in
-            imagBuffer.withUnsafeMutableBufferPointer { imagPtr in
-                magnitudes.withUnsafeMutableBufferPointer { magPtr in
-                    var split = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
-                    vDSP_zvabs(&split, 1, magPtr.baseAddress!, 1, vDSP_Length(magnitudes.count))
-                }
-            }
-        }
-
-        // ---- 4. Spectral centroid ----
-        // Use pre-allocated weightedBuffer
-        vDSP.multiply(freqAxis, magnitudes, result: &weightedBuffer)
-
-        var sumMag: Float = 0
-        var sumWeighted: Float = 0
-        vDSP_sve(magnitudes, 1, &sumMag, vDSP_Length(magnitudes.count))
-        vDSP_sve(weightedBuffer, 1, &sumWeighted, vDSP_Length(weightedBuffer.count))
-
-        let centroid = (sumMag > 0.0001) ? (sumWeighted / sumMag) : 0
-        smoothedCentroid = centroid * emaFactor + smoothedCentroid * (1 - emaFactor)
-
-        // ---- 5. Spectral rolloff (85%) ----
-        // Loop is fine here as array is short (240 elements)
-        let rolloffThreshold = sumMag * 0.85
-        var cumulative: Float = 0
-        var rolloffFreq: Float = 0
-        for i in 0..<magnitudes.count {
-            cumulative += magnitudes[i]
-            if cumulative >= rolloffThreshold {
-                rolloffFreq = freqAxis[i]
-                break
-            }
-        }
-        smoothedRolloff = rolloffFreq * emaFactor + smoothedRolloff * (1 - emaFactor)
-
-        // ---- 6. Map to morphs ----
-        let morphs = calculateMorphs(
-            volume: smoothedVolume,
-            centroid: smoothedCentroid,
-            rolloff: smoothedRolloff,
-            zcr: smoothedZCR
-        )
-        
-        if logMorphs {
-            let maxWeight = morphs.values.max() ?? 0
-            if maxWeight > 0.02 || smoothedVolume > 0.002 {
-                let topMorphs = morphs
-                    .sorted { $0.value > $1.value }
-                    .prefix(5)
-                    .map { "\($0.key)=\(String(format: "%.2f", $0.value))" }
-                    .joined(separator: ", ")
-                let rmsdB = 20 * log10(max(smoothedVolume, 0.0001))
-                print("[LipSync] RMS=\(String(format: "%.1f", rmsdB))dB | \(topMorphs)")
-            }
-        }
-
+        logMorphsIfNeeded(morphs: morphs, volume: smoothedMetrics.volume)
         onMorphsUpdated?(morphs)
     }
 
-    // MARK: - Morph mapping
-    private func calculateMorphs(volume: Float,
-                                 centroid: Float,
-                                 rolloff: Float,
-                                 zcr: Float) -> [String: Float] {
+    // MARK: - Setup helpers
+    private func ensureFFTResources(frameLength: Int, sampleRate: Float) -> FFTResources? {
+        if let existing = fftResources, existing.frameLength == frameLength {
+            existing.sampleRate = sampleRate
+            return existing
+        }
 
-        var m: [String: Float] = [
+        guard let resources = FFTResources(frameLength: frameLength, sampleRate: sampleRate) else {
+            return nil
+        }
+
+        fftResources = resources
+        if logMorphs {
+            print("[LipSync] FFT configured: frameLength=\(frameLength)")
+        }
+        return resources
+    }
+
+    private func warnFrameLengthIfNeeded(length: UInt32) {
+        guard logMorphs else { return }
+        if lastFrameLengthWarning != length {
+            lastFrameLengthWarning = length
+            print("[LipSync] Skipping frame: FFT not configured for length \(length)")
+        }
+    }
+
+    private func logFormatInfoIfNeeded(buffer: AVAudioPCMBuffer) {
+        guard logMorphs, !didLogFormatInfo else { return }
+        didLogFormatInfo = true
+        print("[LipSync] Renderer attached. sampleRate=\(buffer.format.sampleRate), frameLength=\(buffer.frameLength)")
+    }
+
+    private func logDebugFrame(sampleRate: Float, frameLength: Int) {
+        guard logMorphs, debugFramePrints < configuration.maxDebugFrames else { return }
+        debugFramePrints += 1
+        print("[LipSync] frame \(debugFramePrints): sampleRate=\(sampleRate) len=\(frameLength)")
+    }
+
+    // MARK: - Analysis pipeline
+    private func analyze(samples: UnsafeBufferPointer<Float>, resources: FFTResources) -> AudioMetrics {
+        let volume = rootMeanSquare(for: samples)
+        let zcr = zeroCrossingRate(for: samples)
+        performFFT(on: samples, resources: resources)
+        let spectral = spectralFeatures(using: resources)
+
+        return AudioMetrics(volume: volume,
+                            centroid: spectral.centroid,
+                            rolloff: spectral.rolloff,
+                            zcr: zcr)
+    }
+
+    private func rootMeanSquare(for samples: UnsafeBufferPointer<Float>) -> Float {
+        guard samples.count > 0 else { return 0 }
+        var rms: Float = 0
+        vDSP_rmsqv(samples.baseAddress!, 1, &rms, vDSP_Length(samples.count))
+        return rms
+    }
+
+    private func zeroCrossingRate(for samples: UnsafeBufferPointer<Float>) -> Float {
+        guard samples.count > 1 else { return 0 }
+        var crossings: Float = 0
+        var previous = samples[0]
+
+        for sample in samples.dropFirst() {
+            if sample * previous < 0 {
+                crossings += 1
+            }
+            previous = sample
+        }
+
+        return crossings / Float(samples.count)
+    }
+
+    private func performFFT(on samples: UnsafeBufferPointer<Float>, resources: FFTResources) {
+        vDSP.multiply(samples, resources.window, result: &resources.windowedBuffer)
+
+        resources.realBuffer.withUnsafeMutableBufferPointer { realPtr in
+            resources.imagBuffer.withUnsafeMutableBufferPointer { imagPtr in
+                var split = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
+
+                resources.windowedBuffer.withUnsafeBufferPointer { windowPtr in
+                    windowPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: resources.halfLength) { complexPtr in
+                        vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(resources.halfLength))
+                        resources.fft.forward(input: split, output: &split)
+                    }
+                }
+
+                resources.magnitudes.withUnsafeMutableBufferPointer { magnitudePtr in
+                    vDSP_zvabs(&split, 1, magnitudePtr.baseAddress!, 1, vDSP_Length(resources.halfLength))
+                }
+            }
+        }
+    }
+
+    private func spectralFeatures(using resources: FFTResources) -> (centroid: Float, rolloff: Float) {
+        guard !resources.freqAxis.isEmpty else { return (0, 0) }
+
+        vDSP.multiply(resources.freqAxis, resources.magnitudes, result: &resources.weightedBuffer)
+
+        var sumMagnitude: Float = 0
+        var sumWeighted: Float = 0
+        vDSP_sve(resources.magnitudes, 1, &sumMagnitude, vDSP_Length(resources.magnitudes.count))
+        vDSP_sve(resources.weightedBuffer, 1, &sumWeighted, vDSP_Length(resources.weightedBuffer.count))
+
+        let centroid = sumMagnitude > Float.ulpOfOne ? (sumWeighted / sumMagnitude) : 0
+        let rolloff = spectralRolloff(magnitudes: resources.magnitudes,
+                                      freqAxis: resources.freqAxis,
+                                      totalEnergy: sumMagnitude)
+        return (centroid, rolloff)
+    }
+
+    private func spectralRolloff(magnitudes: [Float],
+                                 freqAxis: [Float],
+                                 totalEnergy: Float) -> Float {
+        guard totalEnergy > Float.ulpOfOne, !freqAxis.isEmpty else { return 0 }
+
+        let threshold = totalEnergy * configuration.rolloffPercentile
+        var cumulative: Float = 0
+
+        for (index, magnitude) in magnitudes.enumerated() {
+            cumulative += magnitude
+            if cumulative >= threshold {
+                return freqAxis[index]
+            }
+        }
+
+        return freqAxis.last ?? 0
+    }
+
+    private func smooth(metrics: AudioMetrics) -> AudioMetrics {
+        smoothedVolume = blend(current: smoothedVolume,
+                               newValue: metrics.volume,
+                               factor: configuration.volumeSmoothing)
+        smoothedCentroid = blend(current: smoothedCentroid,
+                                 newValue: metrics.centroid,
+                                 factor: configuration.featureSmoothing)
+        smoothedRolloff = blend(current: smoothedRolloff,
+                                newValue: metrics.rolloff,
+                                factor: configuration.featureSmoothing)
+        smoothedZCR = blend(current: smoothedZCR,
+                            newValue: metrics.zcr,
+                            factor: configuration.featureSmoothing)
+
+        return AudioMetrics(volume: smoothedVolume,
+                            centroid: smoothedCentroid,
+                            rolloff: smoothedRolloff,
+                            zcr: smoothedZCR)
+    }
+
+    private func blend(current: Float, newValue: Float, factor: Float) -> Float {
+        let clampedFactor = max(0, min(1, factor))
+        return newValue * clampedFactor + current * (1 - clampedFactor)
+    }
+
+    // MARK: - Morph mapping
+    private func calculateMorphs(for metrics: AudioMetrics) -> [String: Float] {
+        var morphs: [String: Float] = [
             "AI": 0, "E": 0, "U": 0, "FV": 0,
             "MBP": 0, "ShCh": 0, "O": 0, "L": 0, "WQ": 0
         ]
 
-        // ========= MBP ============
-        if volume < 0.003 {
-            m["MBP"] = 1
-            return m
+        if metrics.volume < configuration.silenceVolumeThreshold {
+            morphs["MBP"] = 1
+            return morphs
         }
 
-        // ========= FV / ShCh (noise-based) ============
-        if rolloff > 5000 || zcr > 0.12 {
-            m["FV"] = min(volume * 6, 1)
-            m["ShCh"] = min(volume * 4, 1)
+        if metrics.rolloff > configuration.noiseRolloffThreshold ||
+            metrics.zcr > configuration.noiseZeroCrossingThreshold {
+            morphs["FV"] = min(metrics.volume * 6, 1)
+            morphs["ShCh"] = min(metrics.volume * 4, 1)
         }
 
-        // ========= U / O (rounded vowels) ============
-        if centroid < 800 {
-            let w = min(volume * 3, 1)
-            m["U"] = w
-            m["O"] = w * 0.7
-            m["WQ"] = w * 0.4
+        if metrics.centroid < configuration.roundedCentroidUpperBound {
+            let weight = min(metrics.volume * 3, 1)
+            morphs["U"] = weight
+            morphs["O"] = weight * 0.7
+            morphs["WQ"] = weight * 0.4
+        } else if metrics.centroid < configuration.brightCentroidLowerBound {
+            let weight = min(metrics.volume * 4, 1)
+            morphs["AI"] = weight
+        } else {
+            let weight = min(metrics.volume * 5, 1)
+            morphs["E"] = weight
+            morphs["L"] = weight * 0.2
         }
 
-        // ========= E / AI / L (mid-high vowels) ============
-        if centroid >= 800 && centroid < 2500 {
-            let w = min(volume * 4, 1)
-            m["AI"] = w
-            m["O"] = m["O"] ?? 0
-        }
-
-        if centroid >= 2500 {
-            let w = min(volume * 5, 1)
-            m["E"] = w
-            m["L"] = 0.2 * w
-        }
-
-        // Normalization: keep sum <= 1
-        let sum = m.values.reduce(0, +)
+        let sum = morphs.values.reduce(0, +)
         if sum > 1 {
-            for key in m.keys {
-                m[key]! /= sum
+            for key in morphs.keys {
+                morphs[key]! /= sum
             }
         }
 
-        return m
+        return morphs
+    }
+
+    private func logMorphsIfNeeded(morphs: [String: Float], volume: Float) {
+        guard logMorphs else { return }
+        let maxWeight = morphs.values.max() ?? 0
+        if maxWeight > configuration.logMorphWeightThreshold ||
+            volume > configuration.logVolumeThreshold {
+            let topMorphs = morphs
+                .sorted { $0.value > $1.value }
+                .prefix(5)
+                .map { "\($0.key)=\(String(format: "%.2f", $0.value))" }
+                .joined(separator: ", ")
+            let rmsdB = 20 * log10(max(volume, 0.0001))
+            print("[LipSync] RMS=\(String(format: "%.1f", rmsdB))dB | \(topMorphs)")
+        }
     }
 }
 
