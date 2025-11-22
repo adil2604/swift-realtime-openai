@@ -2,6 +2,7 @@ import Core
 import WebRTC
 import AVFAudio
 import Foundation
+@preconcurrency import LiveKitWebRTC
 
 public enum ConversationError: Error {
 	case sessionNotFound
