@@ -17,11 +17,8 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     private var sampleRate: Float = 48_000
     private let frameLength: Int = 480
 
-    private var fftSetup: vDSP.FFT<DSPSplitComplex>!
+    private var fftSetup: vDSP.FFT<DSPSplitComplex>?
     private var window: [Float] = []
-    private var log2n: vDSP_Length = 0
-
-    // Pre-allocated buffers (Zero allocations in render loop)
     private var realBuffer: [Float] = []
     private var imagBuffer: [Float] = []
     private var magnitudes: [Float] = []
@@ -43,8 +40,13 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     }
 
     // MARK: - FFT init
-    private func setupFFT() {
-        log2n = vDSP_Length(log2(Float(frameLength)))
+    private func setupFFT(frameLength: Int) {
+        guard frameLength > 0, frameLength.isMultiple(of: 2) else {
+            fftSetup = nil
+            return
+        }
+
+        let log2n = vDSP_Length(log2(Float(frameLength)))
         fftSetup = vDSP.FFT(log2n: log2n, radix: .radix2, ofType: DSPSplitComplex.self)
 
         window = vDSP.window(ofType: Float.self,
@@ -52,16 +54,18 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
                              count: frameLength,
                              isHalfWindow: false)
 
-        // Allocate all buffers once
         let halfLength = frameLength / 2
         realBuffer = .init(repeating: 0, count: halfLength)
         imagBuffer = .init(repeating: 0, count: halfLength)
         magnitudes = .init(repeating: 0, count: halfLength)
         windowedBuffer = .init(repeating: 0, count: frameLength)
         weightedBuffer = .init(repeating: 0, count: halfLength)
-        
-        // Pre-calc freq axis
         freqAxis = (0..<halfLength).map { Float($0) * (sampleRate / Float(frameLength)) }
+
+        self.frameLength = frameLength
+        if logMorphs {
+            print("[LipSync] FFT configured: frameLength=\(frameLength)")
+        }
     }
 
     // MARK: - Main render
@@ -83,10 +87,13 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
         }
 
         let currentFrameLength = Int(pcmBuffer.frameLength)
-        if currentFrameLength != frameLength {
+        if currentFrameLength != frameLength || fftSetup == nil {
+            setupFFT(frameLength: currentFrameLength)
+        }
+        guard currentFrameLength == frameLength, let fftSetup else {
             if logMorphs, lastFrameLengthWarning != pcmBuffer.frameLength {
                 lastFrameLengthWarning = pcmBuffer.frameLength
-                print("[LipSync] Skipping frame: expected \(frameLength) samples, got \(currentFrameLength).")
+                print("[LipSync] Skipping frame: FFT not configured for length \(currentFrameLength)")
             }
             return
         }
