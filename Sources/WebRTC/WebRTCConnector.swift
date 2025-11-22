@@ -46,7 +46,9 @@ import FoundationNetworking
             _onRemoteAudioTrackLock.withLock { _onRemoteAudioTrack = newValue }
         }
     }
+    @ObservationIgnored
     private var _onRemoteAudioTrack: ((LKRTCAudioTrack) -> Void)?
+    @ObservationIgnored
     private let _onRemoteAudioTrackLock = NSLock()
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
