@@ -13,7 +13,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     private var sampleRate: Float = 48_000
     private let frameLength: Int = 480
 
-    private var fftSetup: vDSP.FFT!
+    private var fftSetup: vDSP.FFT<DSPSplitComplex>!
     private var window: [Float] = []
     private var log2n: vDSP_Length = 0
 
@@ -61,7 +61,7 @@ public final class LipSyncAnalyzer: NSObject, LKRTCAudioRenderer {
     }
 
     // MARK: - Main render
-    func render(pcmBuffer: AVAudioPCMBuffer) {
+    public func render(pcmBuffer: AVAudioPCMBuffer) {
         // Check for sample rate change (rare but possible)
         let bufferSampleRate = Float(pcmBuffer.format.sampleRate)
         if bufferSampleRate != self.sampleRate && bufferSampleRate > 0 {
