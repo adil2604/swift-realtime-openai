@@ -18,6 +18,7 @@ public final class Conversation: @unchecked Sendable {
 	private var task: Task<Void, Error>!
 	private let sessionUpdateCallback: SessionUpdateCallback?
 	private let errorStream: AsyncStream<ServerError>.Continuation
+	private let outputAudioContinuation: AsyncStream<AudioData>.Continuation
 
 	/// Whether to print debug information to the console.
 	public var debug: Bool
@@ -34,6 +35,9 @@ public final class Conversation: @unchecked Sendable {
 
 	/// A stream of errors that occur during the conversation.
 	public let errors: AsyncStream<ServerError>
+
+	/// Streaming assistant audio deltas as they arrive (PCM16 chunks by default).
+	public let outputAudioDeltas: AsyncStream<AudioData>
 
 	/// The current session for this conversation.
 	public private(set) var session: Session?
@@ -76,6 +80,7 @@ public final class Conversation: @unchecked Sendable {
 		client = try! WebRTCConnector.create()
 		self.sessionUpdateCallback = sessionUpdateCallback
 		(errors, errorStream) = AsyncStream.makeStream(of: ServerError.self)
+		(outputAudioDeltas, outputAudioContinuation) = AsyncStream.makeStream(of: AudioData.self)
 
 		task = Task.detached { [weak self] in
 			guard let self else { return }
@@ -96,6 +101,7 @@ public final class Conversation: @unchecked Sendable {
 	deinit {
 		client.disconnect()
 		errorStream.finish()
+		outputAudioContinuation.finish()
 	}
 
 	public func connect(using request: URLRequest) async throws {
@@ -239,6 +245,7 @@ private extension Conversation {
 					guard case let .audio(audio) = message.content[contentIndex] else { return }
 					message.content[contentIndex] = .audio(.init(audio: (audio.audio?.data ?? Data()) + delta.data, transcript: audio.transcript))
 				}
+				outputAudioContinuation.yield(delta)
 			case let .responseFunctionCallArgumentsDelta(_, _, itemId, _, _, delta):
 				updateEvent(id: itemId) { functionCall in
 					functionCall.arguments.append(delta)
