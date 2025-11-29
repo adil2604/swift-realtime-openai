@@ -242,33 +242,3 @@ extension WebRTCConnector: LKRTCDataChannelDelegate {
 			}
 		}
 	}
-}
-	public func peerConnection(_: LKRTCPeerConnection, didChange _: LKRTCSignalingState) {}
-	public func peerConnection(_: LKRTCPeerConnection, didGenerate _: LKRTCIceCandidate) {}
-	public func peerConnection(_: LKRTCPeerConnection, didRemove _: [LKRTCIceCandidate]) {}
-	public func peerConnection(_: LKRTCPeerConnection, didChange _: LKRTCIceGatheringState) {}
-
-	public func peerConnection(_: LKRTCPeerConnection, didChange newState: LKRTCIceConnectionState) {
-		print("ICE Connection State changed to: \(newState)")
-	}
-}
-
-extension WebRTCConnector: LKRTCDataChannelDelegate {
-	public func dataChannel(_: LKRTCDataChannel, didReceiveMessageWith buffer: LKRTCDataBuffer) {
-		do { try stream.yield(decoder.decode(ServerEvent.self, from: buffer.data)) }
-		catch {
-			print("Failed to decode server event: \(String(data: buffer.data, encoding: .utf8) ?? "<invalid utf8>")")
-			stream.finish(throwing: error)
-		}
-	}
-
-	public func dataChannelDidChangeState(_ dataChannel: LKRTCDataChannel) {
-		Task { @MainActor [state = dataChannel.readyState] in
-			switch state {
-				case .open: status = .connected
-				case .closing, .closed: status = .disconnected
-				default: break
-			}
-		}
-	}
-}
