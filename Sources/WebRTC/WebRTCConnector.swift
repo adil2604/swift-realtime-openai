@@ -18,7 +18,20 @@ import FoundationNetworking
 		case failedToSetRemoteDescription(Swift.Error)
 	}
 
+	public struct RemoteAudioTrackEvent: @unchecked Sendable {
+		public enum Kind: Sendable {
+			case added
+			case removed
+		}
+
+		public let kind: Kind
+		public let track: LKRTCAudioTrack
+	}
+
 	public let events: AsyncThrowingStream<ServerEvent, Error>
+	public let remoteAudioTrackEvents: AsyncStream<RemoteAudioTrackEvent>
+
+	@MainActor public private(set) var remoteAudioTrack: LKRTCAudioTrack?
 	@MainActor public private(set) var status = RealtimeAPI.Status.disconnected
 
 	public var isMuted: Bool {
@@ -30,6 +43,7 @@ import FoundationNetworking
 	private let connection: LKRTCPeerConnection
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
+	private let remoteAudioTrackStream: AsyncStream<RemoteAudioTrackEvent>.Continuation
 
 	private static let factory: LKRTCPeerConnectionFactory = {
 		LKRTCInitializeSSL()
@@ -54,6 +68,7 @@ import FoundationNetworking
 		self.audioTrack = audioTrack
 		self.dataChannel = dataChannel
 		(events, stream) = AsyncThrowingStream.makeStream(of: ServerEvent.self)
+		(remoteAudioTrackEvents, remoteAudioTrackStream) = AsyncStream.makeStream(of: RemoteAudioTrackEvent.self)
 
 		super.init()
 
@@ -83,6 +98,7 @@ import FoundationNetworking
 	public func disconnect() {
 		connection.close()
 		stream.finish()
+		remoteAudioTrackStream.finish()
 	}
 
 	public func toggleMute() {
@@ -178,9 +194,55 @@ private extension WebRTCConnector {
 
 extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 	public func peerConnectionShouldNegotiate(_: LKRTCPeerConnection) {}
-	public func peerConnection(_: LKRTCPeerConnection, didAdd _: LKRTCMediaStream) {}
 	public func peerConnection(_: LKRTCPeerConnection, didOpen _: LKRTCDataChannel) {}
-	public func peerConnection(_: LKRTCPeerConnection, didRemove _: LKRTCMediaStream) {}
+	public func peerConnection(_: LKRTCPeerConnection, didChange _: LKRTCSignalingState) {}
+	public func peerConnection(_: LKRTCPeerConnection, didGenerate _: LKRTCIceCandidate) {}
+	public func peerConnection(_: LKRTCPeerConnection, didRemove _: [LKRTCIceCandidate]) {}
+	public func peerConnection(_: LKRTCPeerConnection, didChange _: LKRTCIceGatheringState) {}
+
+	public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
+		for case let track as LKRTCAudioTrack in stream.audioTracks {
+			remoteAudioTrackStream.yield(.init(kind: .added, track: track))
+			Task { @MainActor [weak self] in
+				self?.remoteAudioTrack = track
+			}
+		}
+	}
+
+	public func peerConnection(_: LKRTCPeerConnection, didRemove stream: LKRTCMediaStream) {
+		for case let track as LKRTCAudioTrack in stream.audioTracks {
+			remoteAudioTrackStream.yield(.init(kind: .removed, track: track))
+			Task { @MainActor [weak self] in
+				guard let self, self.remoteAudioTrack?.trackId == track.trackId else { return }
+				self.remoteAudioTrack = nil
+			}
+		}
+	}
+
+	public func peerConnection(_: LKRTCPeerConnection, didChange newState: LKRTCIceConnectionState) {
+		print("ICE Connection State changed to: \(newState)")
+	}
+}
+
+extension WebRTCConnector: LKRTCDataChannelDelegate {
+	public func dataChannel(_: LKRTCDataChannel, didReceiveMessageWith buffer: LKRTCDataBuffer) {
+		do { try stream.yield(decoder.decode(ServerEvent.self, from: buffer.data)) }
+		catch {
+			print("Failed to decode server event: \(String(data: buffer.data, encoding: .utf8) ?? "<invalid utf8>")")
+			stream.finish(throwing: error)
+		}
+	}
+
+	public func dataChannelDidChangeState(_ dataChannel: LKRTCDataChannel) {
+		Task { @MainActor [state = dataChannel.readyState] in
+			switch state {
+				case .open: status = .connected
+				case .closing, .closed: status = .disconnected
+				default: break
+			}
+		}
+	}
+}
 	public func peerConnection(_: LKRTCPeerConnection, didChange _: LKRTCSignalingState) {}
 	public func peerConnection(_: LKRTCPeerConnection, didGenerate _: LKRTCIceCandidate) {}
 	public func peerConnection(_: LKRTCPeerConnection, didRemove _: [LKRTCIceCandidate]) {}

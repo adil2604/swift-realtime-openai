@@ -2,6 +2,7 @@ import Core
 import WebRTC
 import AVFAudio
 import Foundation
+@preconcurrency import LiveKitWebRTC
 
 public enum ConversationError: Error {
 	case sessionNotFound
@@ -39,6 +40,16 @@ public final class Conversation: @unchecked Sendable {
 
 	/// A list of items in the conversation.
 	public private(set) var entries: [Item] = []
+
+	/// The most recent remote audio track provided by the assistant, if any.
+	public var remoteAudioTrack: LKRTCAudioTrack? {
+		client.remoteAudioTrack
+	}
+
+	/// A stream you can iterate to receive updates when the assistant publishes or removes audio tracks.
+	public var remoteAudioTrackEvents: AsyncStream<WebRTCConnector.RemoteAudioTrackEvent> {
+		client.remoteAudioTrackEvents
+	}
 
 	public var status: RealtimeAPI.Status {
 		client.status
