@@ -92,6 +92,10 @@ public final class Conversation: @unchecked Sendable {
 		client.status
 	}
 
+	public var audioLevel: Float {
+		client.remoteAudioLevel
+	}
+
 	/// Whether the user is currently speaking.
 	/// This only works when using the server's voice detection.
 	public private(set) var isUserSpeaking: Bool = false
