@@ -20,6 +20,7 @@ import FoundationNetworking
 
 	public let events: AsyncThrowingStream<ServerEvent, Error>
 	@MainActor public private(set) var status = RealtimeAPI.Status.disconnected
+	@MainActor public private(set) var remoteAudioLevel: Float = 0.0
 
 	public var isMuted: Bool {
 		!audioTrack.isEnabled
@@ -194,8 +195,13 @@ extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 
 		lock.withLock {
 			let observer = AudioRMSObserver()
-			observer.callback = { rms in
-				print("MODEL RMS:", rms)
+			observer.callback = { [weak self] rms in
+				// Filter out background noise/silence
+				let adjustedRMS = rms < 0.0001 ? 0 : rms
+				print("RMS:", adjustedRMS)
+				Task { @MainActor [weak self] in
+					self?.remoteAudioLevel = adjustedRMS
+				}
 			}
 			self.rmsObserver = observer
 			self.remoteAudioTrack = audioTrack
