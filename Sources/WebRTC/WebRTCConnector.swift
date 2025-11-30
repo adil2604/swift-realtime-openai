@@ -31,6 +31,10 @@ import FoundationNetworking
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
 
+	private var rmsObserver: AudioRMSObserver?
+	private var remoteAudioTrack: LKRTCAudioTrack?
+	private let lock = NSLock()
+
 	private static let factory: LKRTCPeerConnectionFactory = {
 		LKRTCInitializeSSL()
 
@@ -81,6 +85,13 @@ import FoundationNetworking
 	}
 
 	public func disconnect() {
+		lock.withLock {
+			if let rmsObserver, let remoteAudioTrack {
+				remoteAudioTrack.remove(rmsObserver)
+			}
+			rmsObserver = nil
+			remoteAudioTrack = nil
+		}
 		connection.close()
 		stream.finish()
 	}
@@ -178,7 +189,19 @@ private extension WebRTCConnector {
 
 extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 	public func peerConnectionShouldNegotiate(_: LKRTCPeerConnection) {}
-	public func peerConnection(_: LKRTCPeerConnection, didAdd _: LKRTCMediaStream) {}
+	public func peerConnection(_: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {
+		guard let audioTrack = stream.audioTracks.first else { return }
+
+		lock.withLock {
+			let observer = AudioRMSObserver()
+			observer.callback = { rms in
+				print("MODEL RMS:", rms)
+			}
+			self.rmsObserver = observer
+			self.remoteAudioTrack = audioTrack
+			audioTrack.add(observer)
+		}
+	}
 	public func peerConnection(_: LKRTCPeerConnection, didOpen _: LKRTCDataChannel) {}
 	public func peerConnection(_: LKRTCPeerConnection, didRemove _: LKRTCMediaStream) {}
 	public func peerConnection(_: LKRTCPeerConnection, didChange _: LKRTCSignalingState) {}
