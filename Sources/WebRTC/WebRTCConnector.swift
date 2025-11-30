@@ -6,7 +6,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-@Observable public final class WebRTCConnector: NSObject, Connector, Sendable {
+@Observable public final class WebRTCConnector: NSObject, Connector, @unchecked Sendable {
 	public enum WebRTCError: Error {
 		case invalidEphemeralKey
 		case missingAudioPermission
@@ -31,9 +31,9 @@ import FoundationNetworking
 
 	private let stream: AsyncThrowingStream<ServerEvent, Error>.Continuation
 
-	private var rmsObserver: AudioRMSObserver?
-	private var remoteAudioTrack: LKRTCAudioTrack?
-	private let lock = NSLock()
+	@ObservationIgnored private var rmsObserver: AudioRMSObserver?
+	@ObservationIgnored private var remoteAudioTrack: LKRTCAudioTrack?
+	@ObservationIgnored private let lock = NSLock()
 
 	private static let factory: LKRTCPeerConnectionFactory = {
 		LKRTCInitializeSSL()
