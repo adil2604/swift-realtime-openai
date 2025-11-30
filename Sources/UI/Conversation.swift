@@ -2,7 +2,53 @@ import Core
 import WebRTC
 import AVFAudio
 import Foundation
-@preconcurrency import LiveKitWebRTC
+
+import AVFAudio
+
+final class OutputRMSMonitor {
+    private let engine = AVAudioEngine()
+    private var rmsCallback: ((Float) -> Void)?
+
+    init(callback: @escaping (Float) -> Void) {
+        self.rmsCallback = callback
+        setup()
+    }
+
+    private func setup() {
+        let outputNode = engine.mainMixerNode
+        let format = outputNode.outputFormat(forBus: 0)
+
+        outputNode.installTap(onBus: 0,
+                              bufferSize: 1024,
+                              format: format) { [weak self] buffer, _ in
+            self?.calculateRMS(buffer)
+        }
+
+        do {
+            try engine.start()
+        } catch {
+            print("🔥 Failed to start AVAudioEngine: \(error)")
+        }
+    }
+
+    private func calculateRMS(_ buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let length = Int(buffer.frameLength)
+
+        var sum: Float = 0.0
+        for i in 0..<length {
+            sum += channelData[i] * channelData[i]
+        }
+
+        let rms = sqrt(sum / Float(length))
+        rmsCallback?(rms)
+    }
+
+    deinit {
+        engine.stop()
+    }
+}
+
 
 public enum ConversationError: Error {
 	case sessionNotFound
@@ -13,12 +59,12 @@ public enum ConversationError: Error {
 @MainActor @Observable
 public final class Conversation: @unchecked Sendable {
 	public typealias SessionUpdateCallback = (inout Session) -> Void
+	private var rmsMonitor: OutputRMSMonitor?
 
 	private let client: WebRTCConnector
 	private var task: Task<Void, Error>!
 	private let sessionUpdateCallback: SessionUpdateCallback?
 	private let errorStream: AsyncStream<ServerError>.Continuation
-	private let outputAudioContinuation: AsyncStream<AudioData>.Continuation
 
 	/// Whether to print debug information to the console.
 	public var debug: Bool
@@ -36,24 +82,11 @@ public final class Conversation: @unchecked Sendable {
 	/// A stream of errors that occur during the conversation.
 	public let errors: AsyncStream<ServerError>
 
-	/// Streaming assistant audio deltas as they arrive (PCM16 chunks by default).
-	public let outputAudioDeltas: AsyncStream<AudioData>
-
 	/// The current session for this conversation.
 	public private(set) var session: Session?
 
 	/// A list of items in the conversation.
 	public private(set) var entries: [Item] = []
-
-	/// The most recent remote audio track provided by the assistant, if any.
-	public var remoteAudioTrack: LKRTCAudioTrack? {
-		client.remoteAudioTrack
-	}
-
-	/// A stream you can iterate to receive updates when the assistant publishes or removes audio tracks.
-	public var remoteAudioTrackEvents: AsyncStream<WebRTCConnector.RemoteAudioTrackEvent> {
-		client.remoteAudioTrackEvents
-	}
 
 	public var status: RealtimeAPI.Status {
 		client.status
@@ -80,7 +113,6 @@ public final class Conversation: @unchecked Sendable {
 		client = try! WebRTCConnector.create()
 		self.sessionUpdateCallback = sessionUpdateCallback
 		(errors, errorStream) = AsyncStream.makeStream(of: ServerError.self)
-		(outputAudioDeltas, outputAudioContinuation) = AsyncStream.makeStream(of: AudioData.self)
 
 		task = Task.detached { [weak self] in
 			guard let self else { return }
@@ -101,7 +133,6 @@ public final class Conversation: @unchecked Sendable {
 	deinit {
 		client.disconnect()
 		errorStream.finish()
-		outputAudioContinuation.finish()
 	}
 
 	public func connect(using request: URLRequest) async throws {
@@ -245,7 +276,6 @@ private extension Conversation {
 					guard case let .audio(audio) = message.content[contentIndex] else { return }
 					message.content[contentIndex] = .audio(.init(audio: (audio.audio?.data ?? Data()) + delta.data, transcript: audio.transcript))
 				}
-				outputAudioContinuation.yield(delta)
 			case let .responseFunctionCallArgumentsDelta(_, _, itemId, _, _, delta):
 				updateEvent(id: itemId) { functionCall in
 					functionCall.arguments.append(delta)
@@ -260,8 +290,10 @@ private extension Conversation {
 				isUserSpeaking = false
 			case .outputAudioBufferStarted:
 				isModelSpeaking = true
+				startRMSMonitoring()
 			case .outputAudioBufferStopped:
 				isModelSpeaking = false
+				stopRMSMonitoring()
 			case let .responseOutputItemDone(_, _, _, item):
 				updateEvent(id: item.id) { message in
 					guard case let .message(newMessage) = item else { return }
@@ -270,6 +302,20 @@ private extension Conversation {
 				}
 			default: break
 		}
+	}
+	@MainActor
+	private func startRMSMonitoring() {
+		if rmsMonitor == nil {
+			rmsMonitor = OutputRMSMonitor { [weak self] rms in
+				// тут можно обновлять UI, отдавать callback, сглаживать громкость и т.д.
+				print("RMS:", rms)
+			}
+		}
+	}
+
+	@MainActor
+	private func stopRMSMonitoring() {
+		rmsMonitor = nil // освободит engine и tap
 	}
 
 	func updateEvent(id: String, modifying closure: (inout Item.Message) -> Void) {
