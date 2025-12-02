@@ -137,7 +137,7 @@ public final class Conversation: @unchecked Sendable {
 	}
 
 	deinit {
-		client.disconnect()
+		disconnect(clearState: false)
 		errorStream.finish()
 	}
 
@@ -213,6 +213,35 @@ public final class Conversation: @unchecked Sendable {
 	/// Send the response of a function call.
 	public func send(result output: Item.FunctionCallOutput) throws {
 		try send(event: .createConversationItem(.functionCallOutput(output)))
+	}
+
+	/// Disconnect from the session and clean up resources.
+	///
+	/// This method:
+	/// - Cancels the event handling task
+	/// - Stops RMS monitoring
+	/// - Disconnects the WebRTC client
+	/// - Optionally clears session state and entries
+	///
+	/// - Parameter clearState: If `true`, clears the session and entries. Defaults to `false`.
+	public func disconnect(clearState: Bool = false) {
+		// Cancel the event handling task
+		task?.cancel()
+		
+		// Stop RMS monitoring
+		stopRMSMonitoring()
+		
+		// Disconnect the client
+		client.disconnect()
+		
+		// Optionally clear state
+		if clearState {
+			session = nil
+			entries = []
+			id = nil
+			isUserSpeaking = false
+			isModelSpeaking = false
+		}
 	}
 }
 
