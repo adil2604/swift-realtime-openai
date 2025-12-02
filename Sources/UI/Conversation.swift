@@ -225,13 +225,12 @@ public final class Conversation: @unchecked Sendable {
 	///
 	/// - Parameter clearState: If `true`, clears the session and entries. Defaults to `false`.
 	nonisolated public func disconnect(clearState: Bool = false) {
-
 		teardownAudio()
-
 		if clearState { Task { @MainActor in clearUIState() } }
 	}
 	nonisolated private func teardownAudio() {
-		task?.cancel()
+		MainActor.run { task?.cancel() }
+		stopRMSMonitoring()
 		client.disconnect()
 	}
 	@MainActor private func clearUIState() {
