@@ -137,15 +137,8 @@ public final class Conversation: @unchecked Sendable {
 	}
 
 	deinit {
-		teardownBackend()            // nonisolated, synchronous, safe
-		Task { @MainActor in         // schedule UI cleanup on MainActor
-			teardownUIState()
-			errorStream.finish()
-		}
-	}
-
-	nonisolated private func teardownBackend() {
-		client.disconnect()     // safe: client is not MainActor-isolated
+		client.disconnect()
+		errorStream.finish()
 	}
 
 	public func connect(using request: URLRequest) async throws {
@@ -221,44 +214,7 @@ public final class Conversation: @unchecked Sendable {
 	public func send(result output: Item.FunctionCallOutput) throws {
 		try send(event: .createConversationItem(.functionCallOutput(output)))
 	}
-
-	/// Disconnect from the session and clean up resources.
-	///
-	/// This method:
-	/// - Cancels the event handling task
-	/// - Stops RMS monitoring
-	/// - Disconnects the WebRTC client
-	/// - Optionally clears session state and entries
-	///
-	/// - Parameter clearState: If `true`, clears the session and entries. Defaults to `false`.
-	nonisolated public func disconnect(clearState: Bool = false) {
-		teardownBackend()
-
-		Task { @MainActor in
-			task?.cancel()
-			task = nil
-			stopRMSMonitoring()
-
-			if clearState {
-				teardownUIState()
-			}
-		}
-	}
-
-	@MainActor private func teardownUIState() {
-		task?.cancel()
-		task = nil
-		stopRMSMonitoring()
-		session = nil
-		entries = []
-		id = nil
-		isUserSpeaking = false
-		isModelSpeaking = false
-	}
-
-
 }
-
 
 /// Event handling private API
 private extension Conversation {
