@@ -228,7 +228,8 @@ private extension Conversation {
 				if let sessionUpdateCallback { try updateSession(withChanges: sessionUpdateCallback) }
 			case let .sessionUpdated(_, session):
 				self.session = session
-			case let .conversationItemCreated(_, item, _):
+			case let .conversationItemCreated(_, item, _),
+			     let .conversationItemAdded(_, item, _):
 				entries.append(item)
 			case let .conversationItemDeleted(_, itemId):
 				entries.removeAll { $0.id == itemId }
