@@ -198,7 +198,7 @@ extension WebRTCConnector: LKRTCPeerConnectionDelegate {
 			observer.callback = { [weak self] rms in
 				// Filter out background noise/silence
 				let adjustedRMS = rms < 0.0001 ? 0 : rms
-				print("RMS:", adjustedRMS)
+				// print("RMS:", adjustedRMS)
 				Task { @MainActor [weak self] in
 					self?.remoteAudioLevel = adjustedRMS
 				}
