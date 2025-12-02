@@ -299,6 +299,7 @@ private extension Conversation {
 					guard case let .message(newMessage) = item else { return }
 
                     message = newMessage
+				}
 				if let index = entries.firstIndex(where: { $0.id == item.id }) {
 					entries[index] = item
 				}
