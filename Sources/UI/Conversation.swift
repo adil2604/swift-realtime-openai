@@ -99,6 +99,9 @@ public final class Conversation: @unchecked Sendable {
 	/// Whether the model is currently speaking.
 	public private(set) var isModelSpeaking: Bool = false
 
+    /// The current audio level (RMS) of the model's speech.
+    public private(set) var audioLevel: Float = 0.0
+
 	/// A list of messages in the conversation.
 	/// Note that this doesn't include function call events. To get a complete list, use `entries`.
 	public var messages: [Item.Message] {
@@ -310,8 +313,9 @@ private extension Conversation {
 	private func startRMSMonitoring() {
 		if rmsMonitor == nil {
 			rmsMonitor = OutputRMSMonitor { [weak self] rms in
-				// тут можно обновлять UI, отдавать callback, сглаживать громкость и т.д.
-				print("RMS:", rms)
+                Task { @MainActor [weak self] in
+                    self?.audioLevel = rms
+                }
 			}
 		}
 	}
