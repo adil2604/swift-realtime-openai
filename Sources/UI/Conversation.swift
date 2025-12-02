@@ -225,20 +225,26 @@ public final class Conversation: @unchecked Sendable {
 	///
 	/// - Parameter clearState: If `true`, clears the session and entries. Defaults to `false`.
 	nonisolated public func disconnect(clearState: Bool = false) {
-		task?.cancel()
-		stopRMSMonitoring()
-		client.disconnect()
 
-		if clearState {
-			session = nil
-			entries = []
-			id = nil
-			isUserSpeaking = false
-			isModelSpeaking = false
-		}
+		teardownAudio()
+
+		if clearState { Task { @MainActor in clearUIState() } }
+	}
+	nonisolated private func teardownAudio() {
+		task?.cancel()
+		client.disconnect()
+	}
+	@MainActor private func clearUIState() {
+		session = nil
+		entries = []
+		id = nil
+		isUserSpeaking = false
+		isModelSpeaking = false
 	}
 
+
 }
+
 
 /// Event handling private API
 private extension Conversation {
