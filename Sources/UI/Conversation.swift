@@ -301,10 +301,8 @@ private extension Conversation {
 				isModelSpeaking = false
 				stopRMSMonitoring()
 			case let .responseOutputItemDone(_, _, _, item):
-				updateEvent(id: item.id) { message in
-					guard case let .message(newMessage) = item else { return }
-
-					message = newMessage
+				if let index = entries.firstIndex(where: { $0.id == item.id }) {
+					entries[index] = item
 				}
 			default: break
 		}
