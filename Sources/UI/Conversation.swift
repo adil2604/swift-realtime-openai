@@ -137,8 +137,15 @@ public final class Conversation: @unchecked Sendable {
 	}
 
 	deinit {
-		disconnect(clearState: false)
-		errorStream.finish()
+		teardownBackend()            // nonisolated, synchronous, safe
+		Task { @MainActor in         // schedule UI cleanup on MainActor
+			teardownUIState()
+			errorStream.finish()
+		}
+	}
+
+	nonisolated private func teardownBackend() {
+		client.disconnect()     // safe: client is not MainActor-isolated
 	}
 
 	public func connect(using request: URLRequest) async throws {
@@ -225,15 +232,23 @@ public final class Conversation: @unchecked Sendable {
 	///
 	/// - Parameter clearState: If `true`, clears the session and entries. Defaults to `false`.
 	nonisolated public func disconnect(clearState: Bool = false) {
-		teardownAudio()
-		if clearState { Task { @MainActor in clearUIState() } }
+		teardownBackend()
+
+		Task { @MainActor in
+			task?.cancel()
+			task = nil
+			stopRMSMonitoring()
+
+			if clearState {
+				teardownUIState()
+			}
+		}
 	}
-	nonisolated private func teardownAudio() {
-		MainActor.run { task?.cancel() }
+
+	@MainActor private func teardownUIState() {
+		task?.cancel()
+		task = nil
 		stopRMSMonitoring()
-		client.disconnect()
-	}
-	@MainActor private func clearUIState() {
 		session = nil
 		entries = []
 		id = nil
