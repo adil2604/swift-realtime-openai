@@ -5,11 +5,11 @@ import Foundation
 
 import AVFAudio
 
-final class OutputRMSMonitor: @unchecked Sendable {
+final class OutputRMSMonitor {
     private let engine = AVAudioEngine()
-    private let rmsCallback: (@Sendable (Float) -> Void)
+    private var rmsCallback: ((Float) -> Void)?
 
-    init(callback: @escaping @Sendable (Float) -> Void) {
+    init(callback: @escaping (Float) -> Void) {
         self.rmsCallback = callback
         setup()
     }
@@ -34,7 +34,6 @@ final class OutputRMSMonitor: @unchecked Sendable {
     private func calculateRMS(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let length = Int(buffer.frameLength)
-        guard length > 0 else { return }
 
         var sum: Float = 0.0
         for i in 0..<length {
@@ -42,12 +41,11 @@ final class OutputRMSMonitor: @unchecked Sendable {
         }
 
         let rms = sqrt(sum / Float(length))
-        rmsCallback(rms)
+        rmsCallback?(rms)
     }
 
     deinit {
         engine.stop()
-        engine.reset()
     }
 }
 
@@ -92,10 +90,6 @@ public final class Conversation: @unchecked Sendable {
 
 	public var status: RealtimeAPI.Status {
 		client.status
-	}
-
-	public var audioLevel: Float {
-		client.remoteAudioLevel
 	}
 
 	/// Whether the user is currently speaking.
@@ -230,8 +224,7 @@ private extension Conversation {
 				if let sessionUpdateCallback { try updateSession(withChanges: sessionUpdateCallback) }
 			case let .sessionUpdated(_, session):
 				self.session = session
-			case let .conversationItemCreated(_, item, _),
-			     let .conversationItemAdded(_, item, _):
+			case let .conversationItemCreated(_, item, _):
 				entries.append(item)
 			case let .conversationItemDeleted(_, itemId):
 				entries.removeAll { $0.id == itemId }
@@ -302,6 +295,10 @@ private extension Conversation {
 				isModelSpeaking = false
 				stopRMSMonitoring()
 			case let .responseOutputItemDone(_, _, _, item):
+				updateEvent(id: item.id) { message in
+					guard case let .message(newMessage) = item else { return }
+
+                    message = newMessage
 				if let index = entries.firstIndex(where: { $0.id == item.id }) {
 					entries[index] = item
 				}
@@ -313,7 +310,7 @@ private extension Conversation {
 		if rmsMonitor == nil {
 			rmsMonitor = OutputRMSMonitor { [weak self] rms in
 				// тут можно обновлять UI, отдавать callback, сглаживать громкость и т.д.
-				// print("RMS:", rms)
+				print("RMS:", rms)
 			}
 		}
 	}
