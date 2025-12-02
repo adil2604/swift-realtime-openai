@@ -137,7 +137,11 @@ public final class Conversation: @unchecked Sendable {
 	}
 
 	deinit {
-		disconnect(clearState: false)
+		// Cancel the event handling task
+		task?.cancel()
+		// Disconnect the client
+		client.disconnect()
+		// Finish error stream
 		errorStream.finish()
 	}
 
@@ -228,7 +232,7 @@ public final class Conversation: @unchecked Sendable {
 		// Cancel the event handling task
 		task?.cancel()
 		
-		// Stop RMS monitoring
+		// Stop RMS monitoring (main actor-isolated)
 		stopRMSMonitoring()
 		
 		// Disconnect the client
