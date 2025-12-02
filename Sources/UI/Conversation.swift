@@ -137,11 +137,7 @@ public final class Conversation: @unchecked Sendable {
 	}
 
 	deinit {
-		// Cancel the event handling task
-		task?.cancel()
-		// Disconnect the client
-		client.disconnect()
-		// Finish error stream
+		disconnect(clearState: false)
 		errorStream.finish()
 	}
 
@@ -228,17 +224,11 @@ public final class Conversation: @unchecked Sendable {
 	/// - Optionally clears session state and entries
 	///
 	/// - Parameter clearState: If `true`, clears the session and entries. Defaults to `false`.
-	public func disconnect(clearState: Bool = false) {
-		// Cancel the event handling task
+	nonisolated public func disconnect(clearState: Bool = false) {
 		task?.cancel()
-		
-		// Stop RMS monitoring (main actor-isolated)
 		stopRMSMonitoring()
-		
-		// Disconnect the client
 		client.disconnect()
-		
-		// Optionally clear state
+
 		if clearState {
 			session = nil
 			entries = []
@@ -247,6 +237,7 @@ public final class Conversation: @unchecked Sendable {
 			isModelSpeaking = false
 		}
 	}
+
 }
 
 /// Event handling private API
