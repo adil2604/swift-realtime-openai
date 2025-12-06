@@ -138,13 +138,7 @@ public final class Conversation: @unchecked Sendable {
 	}
 
 	deinit {
-		guard !hasDisconnected else { return }
-		hasDisconnected = true
-
-		task?.cancel()
-		rmsMonitor = nil
 		client.disconnect()
-		errorStream.finish()
 	}
 
 	public func connect(using request: URLRequest) async throws {
