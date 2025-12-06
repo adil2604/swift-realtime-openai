@@ -62,6 +62,7 @@ public enum ConversationError: Error {
 public final class Conversation: @unchecked Sendable {
 	public typealias SessionUpdateCallback = (inout Session) -> Void
 	private var rmsMonitor: OutputRMSMonitor?
+	private var hasDisconnected = false
 
 	private let client: WebRTCConnector
 	private var task: Task<Void, Error>!
@@ -137,8 +138,7 @@ public final class Conversation: @unchecked Sendable {
 	}
 
 	deinit {
-		client.disconnect()
-		errorStream.finish()
+		disconnect()
 	}
 
 	public func connect(using request: URLRequest) async throws {
@@ -154,6 +154,17 @@ public final class Conversation: @unchecked Sendable {
 			guard case .invalidEphemeralKey = error else { throw error }
 			throw ConversationError.invalidEphemeralKey
 		}
+	}
+
+	/// Disconnect from the current session and clean up any active resources.
+	public func disconnect() {
+		guard !hasDisconnected else { return }
+		hasDisconnected = true
+
+		task?.cancel()
+		stopRMSMonitoring()
+		client.disconnect()
+		errorStream.finish()
 	}
 
 	/// Wait for the connection to be established
