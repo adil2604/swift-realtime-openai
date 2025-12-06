@@ -137,7 +137,7 @@ public final class Conversation: @unchecked Sendable {
 		}
 	}
 
-	deinit {
+	@MainActor deinit {
 		disconnect()
 	}
 
