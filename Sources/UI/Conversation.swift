@@ -248,7 +248,8 @@ private extension Conversation {
 				entries.removeAll { $0.id == itemId }
 			case let .conversationItemInputAudioTranscriptionCompleted(_, itemId, contentIndex, transcript, _, _):
 				updateEvent(id: itemId) { message in
-					guard case let .inputAudio(audio) = message.content[contentIndex] else { return }
+					guard message.content.indices.contains(contentIndex),
+					      case let .inputAudio(audio) = message.content[contentIndex] else { return }
 
 					message.content[contentIndex] = .inputAudio(.init(audio: audio.audio, transcript: transcript))
 				}
@@ -261,37 +262,44 @@ private extension Conversation {
 				}
 			case let .responseContentPartAdded(_, _, itemId, _, contentIndex, part):
 				updateEvent(id: itemId) { message in
+					guard contentIndex <= message.content.count else { return }
 					message.content.insert(.init(from: part), at: contentIndex)
 				}
 			case let .responseContentPartDone(_, _, itemId, _, contentIndex, part):
 				updateEvent(id: itemId) { message in
+					guard message.content.indices.contains(contentIndex) else { return }
 					message.content[contentIndex] = .init(from: part)
 				}
 			case let .responseTextDelta(_, _, itemId, _, contentIndex, delta):
 				updateEvent(id: itemId) { message in
-					guard case let .text(text) = message.content[contentIndex] else { return }
+					guard message.content.indices.contains(contentIndex),
+					      case let .text(text) = message.content[contentIndex] else { return }
 
 					message.content[contentIndex] = .text(text + delta)
 				}
 			case let .responseTextDone(_, _, itemId, _, contentIndex, text):
 				updateEvent(id: itemId) { message in
+					guard message.content.indices.contains(contentIndex) else { return }
 					message.content[contentIndex] = .text(text)
 				}
 			case let .responseAudioTranscriptDelta(_, _, itemId, _, contentIndex, delta):
 				updateEvent(id: itemId) { message in
-					guard case let .audio(audio) = message.content[contentIndex] else { return }
+					guard message.content.indices.contains(contentIndex),
+					      case let .audio(audio) = message.content[contentIndex] else { return }
 
 					message.content[contentIndex] = .audio(.init(audio: audio.audio, transcript: (audio.transcript ?? "") + delta))
 				}
 			case let .responseAudioTranscriptDone(_, _, itemId, _, contentIndex, transcript):
 				updateEvent(id: itemId) { message in
-					guard case let .audio(audio) = message.content[contentIndex] else { return }
+					guard message.content.indices.contains(contentIndex),
+					      case let .audio(audio) = message.content[contentIndex] else { return }
 
 					message.content[contentIndex] = .audio(.init(audio: audio.audio, transcript: transcript))
 				}
 			case let .responseOutputAudioDelta(_, _, itemId, _, contentIndex, delta):
 				updateEvent(id: itemId) { message in
-					guard case let .audio(audio) = message.content[contentIndex] else { return }
+					guard message.content.indices.contains(contentIndex),
+					      case let .audio(audio) = message.content[contentIndex] else { return }
 					message.content[contentIndex] = .audio(.init(audio: (audio.audio?.data ?? Data()) + delta.data, transcript: audio.transcript))
 				}
 			case let .responseFunctionCallArgumentsDelta(_, _, itemId, _, _, delta):
